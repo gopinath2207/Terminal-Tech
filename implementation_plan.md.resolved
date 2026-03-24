@@ -1,0 +1,295 @@
+# Affiliate Blog Platform — Implementation Plan
+## MERN Stack + Tailwind CSS + Cloudinary
+
+A production-ready Affiliate Blog Platform with a Deep Black / Matrix Green "Tech-Minimalist" theme, Glassmorphism card UI, full admin dashboard, and SEO optimization. Deployable to **Render** (server) + **Vercel** (client) + **MongoDB Atlas**.
+
+---
+
+## Folder Structure
+
+```
+blog_website/
+├── server/                         # Express + Node.js backend
+│   ├── config/
+│   │   ├── db.js                   # Mongoose connection
+│   │   └── cloudinary.js           # Cloudinary SDK config
+│   ├── controllers/
+│   │   ├── auth.controller.js
+│   │   ├── post.controller.js
+│   │   ├── product.controller.js
+│   │   ├── affiliate.controller.js
+│   │   └── analytics.controller.js
+│   ├── services/
+│   │   ├── auth.service.js
+│   │   ├── post.service.js
+│   │   ├── product.service.js
+│   │   └── cloudinary.service.js
+│   ├── repositories/
+│   │   ├── post.repository.js
+│   │   ├── product.repository.js
+│   │   └── click.repository.js
+│   ├── models/
+│   │   ├── User.model.js
+│   │   ├── Post.model.js
+│   │   ├── Product.model.js
+│   │   └── Click.model.js
+│   ├── routes/
+│   │   ├── auth.routes.js
+│   │   ├── post.routes.js
+│   │   ├── product.routes.js
+│   │   ├── affiliate.routes.js
+│   │   └── analytics.routes.js
+│   ├── middleware/
+│   │   ├── auth.middleware.js      # JWT verify + HttpOnly cookie
+│   │   ├── error.middleware.js     # Global error handler
+│   │   ├── upload.middleware.js    # Multer memory storage
+│   │   └── validate.middleware.js  # Zod/Joi request validation
+│   ├── validators/
+│   │   ├── auth.validator.js
+│   │   ├── post.validator.js
+│   │   └── product.validator.js
+│   ├── utils/
+│   │   ├── jwt.utils.js
+│   │   └── apiResponse.utils.js
+│   ├── .env.example
+│   ├── package.json
+│   └── index.js                   # Entry point
+│
+└── client/                         # React + Vite + Tailwind
+    ├── public/
+    │   └── favicon.svg
+    ├── src/
+    │   ├── api/
+    │   │   └── axios.js            # Axios instance + interceptors
+    │   ├── components/
+    │   │   ├── layout/
+    │   │   │   ├── Navbar.jsx
+    │   │   │   └── Footer.jsx
+    │   │   ├── ui/
+    │   │   │   ├── GlassCard.jsx
+    │   │   │   ├── Badge.jsx
+    │   │   │   ├── Spinner.jsx
+    │   │   │   └── SEOHead.jsx     # react-helmet wrapper
+    │   │   ├── blog/
+    │   │   │   ├── PostCard.jsx
+    │   │   │   ├── PostList.jsx
+    │   │   │   └── ComparisonTable.jsx
+    │   │   └── admin/
+    │   │       ├── RichEditor.jsx  # React-Quill / MDX editor
+    │   │       ├── ImageUploader.jsx
+    │   │       └── StatsCard.jsx
+    │   ├── pages/
+    │   │   ├── public/
+    │   │   │   ├── HomePage.jsx
+    │   │   │   ├── PostPage.jsx
+    │   │   │   └── NotFoundPage.jsx
+    │   │   └── admin/
+    │   │       ├── LoginPage.jsx
+    │   │       ├── DashboardPage.jsx
+    │   │       ├── PostsPage.jsx
+    │   │       ├── PostFormPage.jsx
+    │   │       ├── ProductsPage.jsx
+    │   │       └── ProductFormPage.jsx
+    │   ├── hooks/
+    │   │   ├── useAuth.js
+    │   │   └── usePosts.js
+    │   ├── context/
+    │   │   └── AuthContext.jsx
+    │   ├── routes/
+    │   │   ├── AppRouter.jsx       # React Router v6 + lazy loading
+    │   │   └── ProtectedRoute.jsx
+    │   ├── lib/
+    │   │   └── queryClient.js      # React Query client config
+    │   ├── utils/
+    │   │   └── cloudinaryUrl.js    # Build optimized image URLs
+    │   ├── App.jsx
+    │   ├── main.jsx
+    │   └── index.css               # Tailwind + custom variables
+    ├── tailwind.config.js
+    ├── vite.config.js
+    └── package.json
+```
+
+---
+
+## MongoDB Schemas
+
+### 1. User Model (`User.model.js`)
+```js
+const userSchema = new Schema({
+  username: { type: String, required: true, unique: true, trim: true },
+  email:    { type: String, required: true, unique: true, lowercase: true },
+  password: { type: String, required: true },          // bcrypt hashed
+  role:     { type: String, enum: ['admin'], default: 'admin' },
+}, { timestamps: true });
+// Index: email (unique auto-indexed)
+```
+
+### 2. Post Model (`Post.model.js`)
+```js
+const postSchema = new Schema({
+  title:        { type: String, required: true, trim: true },
+  slug:         { type: String, required: true, unique: true },  // ← INDEXED
+  excerpt:      { type: String, required: true, maxlength: 300 },
+  content:      { type: String, required: true },                 // HTML/Markdown
+  category:     { type: String, required: true, index: true },    // ← INDEXED
+  tags:         [String],
+  coverImage:   {
+    url:          String,           // Cloudinary URL (f_auto,q_auto)
+    publicId:     String,           // for deletion
+  },
+  products:     [{ type: Schema.Types.ObjectId, ref: 'Product' }], // embedded comparison
+  isTrending:   { type: Boolean, default: false },
+  isTopPick:    { type: Boolean, default: false },
+  views:        { type: Number, default: 0 },
+  author:       { type: Schema.Types.ObjectId, ref: 'User' },
+  metaTitle:    String,
+  metaDesc:     String,
+  published:    { type: Boolean, default: false },
+}, { timestamps: true });
+
+postSchema.index({ slug: 1 });
+postSchema.index({ category: 1 });
+postSchema.index({ isTrending: 1, createdAt: -1 });
+```
+
+### 3. Product Model (`Product.model.js`)
+```js
+const productSchema = new Schema({
+  name:           { type: String, required: true },
+  slug:           { type: String, required: true, unique: true }, // ← INDEXED
+  description:    { type: String },
+  image:          {
+    url:          String,       // Cloudinary URL
+    publicId:     String,
+  },
+  affiliateUrl:   { type: String, required: true },  // original long URL
+  shortCode:      { type: String, required: true, unique: true }, // redirect key
+  price:          String,
+  rating:         { type: Number, min: 0, max: 5 },
+  isBestValue:    { type: Boolean, default: false },
+  specs:          [{ key: String, value: String }],  // for comparison table
+  category:       { type: String, index: true },     // ← INDEXED
+  clicks:         { type: Number, default: 0 },
+}, { timestamps: true });
+
+productSchema.index({ slug: 1 });
+productSchema.index({ category: 1 });
+productSchema.index({ shortCode: 1 });
+```
+
+### 4. Click Model (`Click.model.js`) — Analytics
+```js
+const clickSchema = new Schema({
+  product:    { type: Schema.Types.ObjectId, ref: 'Product', required: true },
+  ip:         String,
+  userAgent:  String,
+  referer:    String,
+}, { timestamps: true });
+
+clickSchema.index({ product: 1, createdAt: -1 });
+```
+
+---
+
+## Key Dependencies
+
+### Server (`server/package.json`)
+| Package | Purpose |
+|---|---|
+| `express` | HTTP server |
+| `mongoose` | MongoDB ODM |
+| `dotenv` | Env vars |
+| `bcryptjs` | Password hashing |
+| `jsonwebtoken` | JWT auth |
+| `cookie-parser` | HttpOnly cookie parsing |
+| `compression` | Gzip/Brotli |
+| `helmet` | Security headers |
+| `cors` | CORS handling |
+| `express-rate-limit` | Rate limiting |
+| `cloudinary` | Image CDN |
+| `multer` | File upload (memory) |
+| `zod` | Request validation |
+| `slugify` | Slug generation |
+| `morgan` | HTTP request logging |
+
+### Client (`client/package.json`)
+| Package | Purpose |
+|---|---|
+| `react`, `react-dom` | UI |
+| `react-router-dom` v6 | Routing |
+| `@tanstack/react-query` | Data fetching + caching |
+| `axios` | HTTP client |
+| `react-helmet-async` | Dynamic SEO meta tags |
+| `react-quill` | Rich text editor |
+| `lucide-react` | Icons |
+| `tailwindcss` | Styling |
+| `@tailwindcss/typography` | Prose styling for blog content |
+
+---
+
+## Architecture Notes
+
+### Controller → Service → Repository Pattern
+- **Controller**: Parse req, call service, return res. No business logic.
+- **Service**: Business logic. Calls repository and external APIs (Cloudinary).
+- **Repository**: All DB queries. Uses `.lean()` on public read routes.
+
+### Image Strategy
+- `multer` memory storage → `cloudinary.uploader.upload_stream` with transformation `f_auto,q_auto,w_1200` (auto WebP/Avif, quality optimized, max 1200px wide).
+- Cloudinary `publicId` stored in DB for future deletion.
+- Client builds URLs via `cloudinaryUrl.js` util (never constructs URLs by hand).
+
+### Auth Flow
+- POST `/api/auth/login` → JWT signed with 7d expiry → set as **HttpOnly**, **Secure**, **SameSite=Strict** cookie.
+- All admin routes protected by `auth.middleware.js` which reads cookie, verifies JWT.
+- Logout clears cookie.
+
+### Affiliate Redirect
+- GET `/go/:shortCode` → log click to `Click` model (async, no await block) → 301 redirect to `affiliateUrl`.
+
+---
+
+## Verification Plan
+
+### Automated / Dev Testing
+
+1. **Server Health Check**
+   ```bash
+   cd server && npm run dev
+   curl http://localhost:5000/api/health
+   # Expected: { "status": "ok" }
+   ```
+
+2. **Auth Flow**
+   - POST `http://localhost:5000/api/auth/register` with `{ username, email, password }`
+   - POST `http://localhost:5000/api/auth/login` → check response sets `token` cookie
+   - GET `http://localhost:5000/api/analytics` without cookie → expect 401
+   - GET with cookie → expect dashboard data
+
+3. **Cloudinary Image Upload**
+   - POST `http://localhost:5000/api/posts` (admin, with multipart image)
+   - Check response `coverImage.url` contains `cloudinary.com` with `f_auto,q_auto`
+
+4. **Public API**
+   - GET `/api/posts?trending=true` → returns array of lean post objects
+   - GET `/api/posts/:slug` → returns single post with populated products
+
+5. **Affiliate Redirect**
+   - GET `http://localhost:5000/go/test-code` → 301 to original URL
+   - Check `Click` collection increments
+
+6. **Client Dev Server**
+   ```bash
+   cd client && npm run dev
+   # Open http://localhost:5173
+   ```
+   - Verify Home page renders Trending and Top 5 sections
+   - Navigate to `/admin/login` → login → dashboard renders stats
+
+### Manual Verification
+1. Open `http://localhost:5173` — check dark background (#050505), Matrix Green accents (#00FF41).
+2. On mobile (DevTools 375px), verify comparison table scrolls horizontally.
+3. Check glassmorphism card effect on PostCard components.
+4. Login to admin → create a post with image → publish → verify it appears on home page.
+5. Click an affiliate link button → confirm redirect and click count increments in dashboard.
