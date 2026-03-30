@@ -3,13 +3,15 @@ node_modules/
 .pnp
 .pnp.js
 
-# ── Environment Variables (NEVER commit) ──────────────────────────────────────
+# ── Environment Variables (NEVER commit secrets) ──────────────────────────────
 .env
 .env.local
 .env.*.local
 server/.env
 client/.env
 client/.env.local
+# NOTE: client/.env.production is intentionally NOT ignored
+# It only contains the public API URL (no secrets) and is needed for Vercel builds
 
 # ── Build Output ──────────────────────────────────────────────────────────────
 dist/
