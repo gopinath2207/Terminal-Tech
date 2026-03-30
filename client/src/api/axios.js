@@ -14,8 +14,11 @@ api.interceptors.response.use(
         const status = error.response?.status;
         const msg = error.response?.data?.message || error.message || 'Request failed';
 
-        // Auto-redirect to login on 401 (expired session)
-        if (status === 401 && !window.location.pathname.startsWith('/admin/login')) {
+        // Only redirect to login on 401 if the user is already on an admin page.
+        // Public visitors hitting /auth/me with no session return 401 — that's
+        // expected and should NOT redirect them away from the public site.
+        const onAdminPage = window.location.pathname.startsWith('/admin');
+        if (status === 401 && onAdminPage && !window.location.pathname.startsWith('/admin/login')) {
             window.location.href = '/admin/login';
             return Promise.reject(new Error('Session expired. Please log in again.'));
         }
